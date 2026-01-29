@@ -2,20 +2,20 @@ import sys
 import csv
 
 # -------------------------------------------------------------
-# DİKKAT: Bu kodun çalışması için sistemde pymongo 3.12.3 yüklü olmalıdır.
-# Komut: pip3 install pymongo==3.12.3
-# Eğer pymongo yüklüyse ve hata alıyorsanız, mevcut pymongo sürümünü kaldırıp
-# belirtilen sürümü yükleyin: pip3 uninstall pymongo
+# ATTENTION: This script requires pymongo 3.12.3 to function correctly.
+# Command: pip3 install pymongo==3.12.3
+# If pymongo is already installed and you face errors, uninstall
+# the current version and install the specified one: pip3 uninstall pymongo
 # -------------------------------------------------------------
 
 def check_pymongo_version():
     try:
         import pymongo
         if not pymongo.__version__.startswith("3."):
-            print("HATA: PyMongo surumu uyumsuz. 3.x gereklidir.")
+            print("ERROR: Incompatible PyMongo version. 3.x is required.")
             sys.exit(1)
     except ImportError:
-        print("HATA: PyMongo yuklu degil.")
+        print("ERROR: PyMongo is not installed.")
         sys.exit(1)
 
 check_pymongo_version()
@@ -80,6 +80,6 @@ try:
         writer = csv.writer(file)
         writer.writerow(["Name", "Model", "Mac", "Firmware", "Site", "LTS", "EOL", "Adopted", "Link"])
         writer.writerows(device_rows)
-    print("Dosya kaydedildi: devices.csv")
+    print("File saved: devices.csv")
 except Exception as e:
-    print(f"Hata: {e}")
+    print(f"Error: {e}")

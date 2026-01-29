@@ -9,14 +9,9 @@ from pymongo import MongoClient
 # -------------------------------------------------------------
 
 # Bağlantı Ayarları
-try:
-    client = MongoClient('127.0.0.1', 27117, serverSelectionTimeoutMS=5000)
-    # Bağlantıyı test et
-    client.server_info()
-except Exception as e:
-    print(f"Veritabanı Bağlantı Hatası: {e}")
-    print("Lütfen pymongo sürümünün 3.12.3 olduğundan emin olun.")
-    exit(1)
+# Script Unifi OS Container içinde çalışıyorsa '127.0.0.1' kullanılır.
+# Eğer dışarıdan bağlanıyorsanız buraya Unifi IP adresini yazın.
+client = MongoClient('127.0.0.1', 27117)
 
 # Veritabanı Tanımları
 db = client['ace']
@@ -24,70 +19,77 @@ devices_col = db['device']
 sites_col = db['site']
 settings_col = db['setting']
 
-# Hostname'i bul (Controller IP/Domain)
+# 1. Hostname Bilgisini Çekme
 hostname = "unknown"
 try:
-    # Genellikle tek bir ayar dökümanı olur, ilkini alıyoruz
-    setting = settings_col.find_one()
-    if setting and "hostname" in setting:
-        hostname = setting["hostname"]
+    # Ayarlardan hostname'i bulmaya çalış, yoksa hata vermeden geç
+    for setting in settings_col.find():
+        hostname = setting.get("hostname", "unknown")
+        break
 except Exception as e:
-    print(f"Hostname alınamadı: {e}")
+    print(f"Uyarı: Hostname alınamadı ({e})")
 
-# Site bilgilerini hafızaya al (ID -> İsim eşleşmesi için)
+# 2. Site Bilgilerini Hafızaya Alma (ID -> İsim eşleşmesi için)
 sites_dict = {}
 print("Siteler taranıyor...")
-for site in sites_col.find():
-    site_id = str(site["_id"])
-    sites_dict[site_id] = {
-        "desc": site.get("desc", "No Description"),
-        "name": site.get("name", "default")
-    }
+try:
+    for site in sites_col.find():
+        site_id = str(site["_id"])
+        # .get kullanarak veri yoksa varsayılan değer atıyoruz
+        sites_dict[site_id] = {
+            "desc": site.get("desc", "No Description"), 
+            "name": site.get("name", "default")
+        }
+    print(f"Bulunan Siteler: {sites_dict}")
+except Exception as e:
+    print(f"Hata: Siteler okunurken sorun oluştu: {e}")
 
-print(f"Bulunan Siteler: {sites_dict}")
-
-# Cihazları topla
+# 3. Cihazları Listeleme ve Verileri Hazırlama
 device_rows = []
 print("Cihazlar taranıyor...")
 
 for device in devices_col.find():
     try:
-        # Verileri güvenli şekilde al (.get kullanarak hata riskini azaltıyoruz)
-        name = device.get("name", "")
-        if not name:
-            name = device.get("mac", "Unknown Device") # İsmi yoksa MAC adresini yaz
+        # Cihaz ismini güvenli şekilde al
+        device_name = device.get("name", "")
+        if not device_name:
+            device_name = device.get("mac", "Unknown Device") # İsim yoksa MAC adresini kullan
 
-        model = device.get("model", "Unknown")
-        mac = device.get("mac", "")
-        version = device.get("version", "")
-        
-        # Site ID üzerinden site bilgilerini çek
+        # Site bilgisini eşleştir
         site_id = device.get("site_id", "")
         site_info = sites_dict.get(site_id, {"desc": "Unknown Site", "name": "default"})
         
-        site_desc = site_info["desc"]
-        site_name = site_info["name"]
+        # Link oluşturma
+        manage_link = f"https://{hostname}:8443/manage/{site_info['name']}/devices"
 
-        is_lts = device.get("model_in_lts", False)
-        is_eol = device.get("model_in_eol", False)
-        is_adopted = device.get("adopted", False)
-
-        # Yönetim URL'ini oluştur
-        link = f"https://{hostname}:8443/manage/{site_name}/devices"
-
-        device_row = [name, model, mac, version, site_desc, is_lts, is_eol, is_adopted, link]
-        device_rows.append(device_row)
+        # Satır verisini oluştur
+        device_row = [
+            device_name, 
+            device.get("model", ""), 
+            device.get("mac", ""), 
+            device.get("version", ""), 
+            site_info["desc"], 
+            device.get("model_in_lts", False), 
+            device.get("model_in_eol", False), 
+            device.get("adopted", False), 
+            manage_link
+        ]
         
-    except Exception as e:
-        print(f"Cihaz işlenirken hata: {e}")
+        device_rows.append(device_row)
+        print(device_row) # Ekrana da yazdıralım
 
-# CSV dosyasına yaz
+    except Exception as e:
+        print(f"Hata: Bir cihaz işlenirken sorun oluştu: {e}")
+
+# 4. CSV Dosyasına Yazma
 csv_filename = 'devices.csv'
 try:
     with open(csv_filename, 'w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
+        # Başlık satırı
         writer.writerow(["Name", "Model", "Mac", "Firmware", "Site", "LTS", "EOL", "Adopted", "Link"])
+        # Veri satırları
         writer.writerows(device_rows)
     print(f"\nBaşarılı! {len(device_rows)} cihaz '{csv_filename}' dosyasına kaydedildi.")
 except IOError as e:
-    print(f"Dosya yazma hatası: {e}")
+    print(f"Kritik Hata: Dosya yazılamadı: {e}")

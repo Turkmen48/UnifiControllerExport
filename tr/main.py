@@ -4,6 +4,8 @@ from pymongo import MongoClient
 # -------------------------------------------------------------
 # DİKKAT: Bu kodun çalışması için sistemde pymongo 3.12.3 yüklü olmalıdır.
 # Komut: pip3 install pymongo==3.12.3
+# Eğer pymongo yüklüyse ve hata alıyorsanız, mevcut pymongo sürümünü kaldırıp
+# belirtilen sürümü yükleyin: pip3 uninstall pymongo
 # -------------------------------------------------------------
 
 # Bağlantı Ayarları

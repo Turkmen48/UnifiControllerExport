@@ -105,17 +105,12 @@ for device in devices.find():
         print(f"Cihaz döngüsünde hata: {e}")
 
 # CSV Kaydetme
-# ... (Kodun üst kısımları aynı) ...
-
-# 4. CSV Kaydetme (YOLU DEĞİŞTİRDİK)
-save_path = '/mnt/data/devices.csv'  # <--- BURASI ÖNEMLİ
-
 try:
-    with open(save_path, 'w', newline='', encoding='utf-8') as file:
+    with open('devices.csv', 'w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerow(["Name", "Model", "Mac", "Firmware", "Site", "LTS", "EOL", "Adopted", "Link"])
-        writer.writerows(device_rows)
-    print(f"\nBaşarılı! Dosya şuraya kaydedildi: {save_path}")
-    print("Bu dosyayı WinSCP veya FileZilla ile '/mnt/data/' klasöründen alabilirsiniz.")
-except IOError as e:
-    print(f"Kritik Hata: Dosya yazılamadı: {e}")
+        for device_row in device_rows:
+            writer.writerow(device_row)
+    print("İşlem Başarılı. devices.csv oluşturuldu.")
+except Exception as e:
+    print(f"Dosya yazma hatası: {e}")

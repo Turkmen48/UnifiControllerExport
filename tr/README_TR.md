@@ -34,7 +34,7 @@ mkdir -p /home/unifiExporter
 cd /home/unifiExporter
 
 # Scripti indir
-wget [https://raw.githubusercontent.com/Turkmen48/UnifiControllerExport/refs/heads/main/tr/main.py](https://raw.githubusercontent.com/Turkmen48/UnifiControllerExport/refs/heads/main/tr/main.py)
+wget https://raw.githubusercontent.com/Turkmen48/UnifiControllerExport/refs/heads/main/tr/main.py
 
 ```
 

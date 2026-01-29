@@ -1,5 +1,6 @@
-import csv
-from pymongo import MongoClient
+import sys
+import subprocess
+import time
 
 # -------------------------------------------------------------
 # DİKKAT: Bu kodun çalışması için sistemde pymongo 3.12.3 yüklü olmalıdır.
@@ -11,85 +12,105 @@ from pymongo import MongoClient
 # Bağlantı Ayarları
 # Script Unifi OS Container içinde çalışıyorsa '127.0.0.1' kullanılır.
 # Eğer dışarıdan bağlanıyorsanız buraya Unifi IP adresini yazın.
+
+def install_correct_pymongo():
+    print("PyMongo sürümü kontrol ediliyor...")
+    try:
+        import pymongo
+        version = pymongo.__version__
+        print(f"Mevcut PyMongo Sürümü: {version}")
+        
+        # Eğer sürüm 3 ile başlamıyorsa (Örn: 4.x.x ise)
+        if not version.startswith("3."):
+            print("UYUMSUZ SÜRÜM TESPİT EDİLDİ! Otomatik düzeltme başlatılıyor...")
+            print("Mevcut sürüm kaldırılıyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "pymongo", "-y"])
+            
+            print("Uyumlu sürüm (3.12.3) yükleniyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pymongo==3.12.3"])
+            
+            print("Yükleme tamamlandı! Scriptin yeni kütüphaneyi görmesi için lütfen bu scripti TEKRAR ÇALIŞTIRIN.")
+            sys.exit(0) # İşlem bitti, kullanıcı tekrar başlatsın diye çıkıyoruz.
+            
+    except ImportError:
+        print("PyMongo hiç yüklü değil. Yükleniyor...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pymongo==3.12.3"])
+        print("Yükleme bitti. Lütfen scripti tekrar çalıştırın.")
+        sys.exit(0)
+
+# Bu fonksiyonu en başta çağırıyoruz
+install_correct_pymongo()
+# --- OTOMATİK DÜZELTME BİTİŞİ ---
+
+import csv
+from pymongo import MongoClient
+
+# ... KODUNUZUN GERİ KALANI BURADAN DEVAM EDİYOR ...
+
+# Bağlantı ayarları (Unifi OS Container içindeyse 127.0.0.1, dışındaysa IP)
+# Eğer scripti container içine taşıdıysanız burası 127.0.0.1 kalmalı.
 client = MongoClient('127.0.0.1', 27117)
 
-# Veritabanı Tanımları
 db = client['ace']
-devices_col = db['device']
-sites_col = db['site']
-settings_col = db['setting']
-
-# 1. Hostname Bilgisini Çekme
+devices = db['device']
+sites = db['site']
+settings = db['setting']
+device_rows = []
+sites_dict = {}
 hostname = "unknown"
+
+# Settings kısmında hata almamak için koruma
 try:
-    # Ayarlardan hostname'i bulmaya çalış, yoksa hata vermeden geç
-    for setting in settings_col.find():
+    for setting in settings.find():
         hostname = setting.get("hostname", "unknown")
         break
 except Exception as e:
-    print(f"Uyarı: Hostname alınamadı ({e})")
+    print(f"Hostname hatası: {e}")
 
-# 2. Site Bilgilerini Hafızaya Alma (ID -> İsim eşleşmesi için)
-sites_dict = {}
-print("Siteler taranıyor...")
-try:
-    for site in sites_col.find():
-        site_id = str(site["_id"])
-        # .get kullanarak veri yoksa varsayılan değer atıyoruz
-        sites_dict[site_id] = {
-            "desc": site.get("desc", "No Description"), 
-            "name": site.get("name", "default")
-        }
-    print(f"Bulunan Siteler: {sites_dict}")
-except Exception as e:
-    print(f"Hata: Siteler okunurken sorun oluştu: {e}")
-
-# 3. Cihazları Listeleme ve Verileri Hazırlama
-device_rows = []
-print("Cihazlar taranıyor...")
-
-for device in devices_col.find():
+# Siteleri çekme
+print("Siteler işleniyor...")
+for site in sites.find():
     try:
-        # Cihaz ismini güvenli şekilde al
+        site_id = str(site["_id"])
+        sites_dict[site_id] = {"desc": site.get("desc", "no-desc"), "name": site.get("name", "default")}
+    except Exception as e:
+        print(f"Site hatası: {e}")
+
+# Cihazları çekme
+print("Cihazlar işleniyor...")
+for device in devices.find():
+    try:
         device_name = device.get("name", "")
         if not device_name:
-            device_name = device.get("mac", "Unknown Device") # İsim yoksa MAC adresini kullan
+            device_name = device.get("mac", "Unknown") # İsim yoksa mac yazsın
 
-        # Site bilgisini eşleştir
-        site_id = device.get("site_id", "")
-        site_info = sites_dict.get(site_id, {"desc": "Unknown Site", "name": "default"})
+        # Güvenli veri çekme (Hata verirse boş string koyar)
+        site_id = device.get("site_id")
+        site_info = sites_dict.get(site_id, {"desc": "Unknown", "name": "default"})
         
-        # Link oluşturma
-        manage_link = f"https://{hostname}:8443/manage/{site_info['name']}/devices"
-
-        # Satır verisini oluştur
         device_row = [
             device_name, 
             device.get("model", ""), 
             device.get("mac", ""), 
             device.get("version", ""), 
             site_info["desc"], 
-            device.get("model_in_lts", False), 
-            device.get("model_in_eol", False), 
-            device.get("adopted", False), 
-            manage_link
+            device.get("model_in_lts", ""), 
+            device.get("model_in_eol", ""), 
+            device.get("adopted", ""), 
+            "https://" + hostname + ":8443/manage/" + site_info["name"] + "/devices"
         ]
-        
         device_rows.append(device_row)
-        print(device_row) # Ekrana da yazdıralım
-
+        print(device_row)
     except Exception as e:
-        print(f"Hata: Bir cihaz işlenirken sorun oluştu: {e}")
+        print(f"Cihaz döngüsünde hata: {e}")
 
-# 4. CSV Dosyasına Yazma
-csv_filename = 'devices.csv'
+# CSV Kaydetme
 try:
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as file:
+    with open('devices.csv', 'w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        # Başlık satırı
         writer.writerow(["Name", "Model", "Mac", "Firmware", "Site", "LTS", "EOL", "Adopted", "Link"])
-        # Veri satırları
-        writer.writerows(device_rows)
-    print(f"\nBaşarılı! {len(device_rows)} cihaz '{csv_filename}' dosyasına kaydedildi.")
-except IOError as e:
-    print(f"Kritik Hata: Dosya yazılamadı: {e}")
+        for device_row in device_rows:
+            writer.writerow(device_row)
+    print("İşlem Başarılı. devices.csv oluşturuldu.")
+except Exception as e:
+    print(f"Dosya yazma hatası: {e}")
